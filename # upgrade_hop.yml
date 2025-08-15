@@ -1,0 +1,77 @@
+# upgrade_hop.yml
+- name: Perform one Ubuntu LTS upgrade hop ({{ hop_no }})
+  vars:
+    hop_pidfile: "/var/run/do-release-upgrade-hop.pid"
+    hop_logfile: "/var/log/do-release-upgrade-hop.log"
+    hop_ssh_down_timeout: 7200
+    hop_ssh_up_timeout: 5400
+    hop_proc_timeout: 14400
+    hop_proc_poll_interval: 30
+
+  block:
+    - name: Check if already on Noble
+      ansible.builtin.set_fact:
+        is_noble: "{{ ansible_distribution_version is version('24.04', '==') }}"
+
+    - name: Start release upgrade in background (hop {{ hop_no }})
+      ansible.builtin.shell: |
+        set -e
+        if [ -f "{{ hop_logfile }}" ]; then mv -f "{{ hop_logfile }}" "{{ hop_logfile }}.1" || true; fi
+        nohup do-release-upgrade -f DistUpgradeViewNonInteractive -m server \
+          > "{{ hop_logfile }}" 2>&1 &
+        echo $! > "{{ hop_pidfile }}"
+      args: { executable: /bin/bash }
+      environment: "{{ noninteractive_env | default({}) }}"
+      when: not is_noble
+
+    - name: Wait for SSH to go DOWN during upgrade (hop {{ hop_no }})
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}"
+        port: 22
+        state: stopped
+        timeout: "{{ hop_ssh_down_timeout }}"
+        delay: 30
+      delegate_to: localhost
+      failed_when: false
+      when: not is_noble
+
+    - name: Wait for host to come back (hop {{ hop_no }})
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: "{{ hop_ssh_up_timeout }}"
+      when: not is_noble
+
+    - name: Wait for do-release-upgrade to finish (hop {{ hop_no }})
+      ansible.builtin.shell: |
+        set -e
+        deadline=$(( $(date +%s) + {{ hop_proc_timeout }} ))
+        while :; do
+          pid=""
+          [ -f "{{ hop_pidfile }}" ] && pid=$(cat "{{ hop_pidfile }}" 2>/dev/null || true)
+          running=0
+          if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            running=1
+          elif pgrep -f '^/.*do-release-upgrade' >/dev/null 2>&1; then
+            running=1
+          elif pgrep -x dpkg >/dev/null 2>&1 || pgrep -x apt >/dev/null 2>&1; then
+            running=1
+          fi
+          [ "$running" -eq 0 ] && exit 0
+          [ "$(date +%s)" -ge "$deadline" ] && echo "Timeout; see {{ hop_logfile }}" && exit 1
+          sleep {{ hop_proc_poll_interval }}
+        done
+      args: { executable: /bin/bash }
+      changed_when: false
+      when: not is_noble
+
+    - name: Gather facts after hop {{ hop_no }}
+      ansible.builtin.setup:
+      when: not is_noble
+
+    - name: Update is_noble flag after hop {{ hop_no }}
+      ansible.builtin.set_fact:
+        is_noble: "{{ ansible_distribution_version is version('24.04', '==') }}"
+
+    - name: Log path for hop {{ hop_no }}
+      ansible.builtin.debug:
+        msg: "Hop {{ hop_no }} finished. Log: {{ hop_logfile }}"
