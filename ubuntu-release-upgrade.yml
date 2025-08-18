@@ -1,8 +1,10 @@
 # ubuntu-release-upgrade.yml
 - name: Bring all Ubuntu LTS hosts up to latest LTS release
+  # Group of target devices in inventory
   hosts: ubuntu
   become: true
   gather_facts: true
+  # Performs update one-by-one to not disrupt all service
   serial: 1
 
   vars:
