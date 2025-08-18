@@ -1,0 +1,5 @@
+[all:vars]
+ansible_user=ansible
+
+[ubuntu]
+ubuntu_20_04 ansible_host=172.20.100.1

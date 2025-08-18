@@ -1,0 +1,45 @@
+# upgrade-hop.yml
+- name: Perform release upgrade to Ubuntu {{ upgrade_to }} LTS
+
+  block:
+      # Setting up condition to check if current version is less than target version
+    - name: Check if Ubuntu {{ ansible_distribution_version }} LTS release requires upgrade
+      ansible.builtin.set_fact:
+        # For example 22.04 < 20.04 = false and 22.04 < 24.04 = true
+        is_upgrade_required: "{{ ansible_distribution_version is version(item, '<') }}"
+
+    - name: Check if a pre-upgrade reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: pre_reboot_flag
+
+    - name: Reboot before release upgrade
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+      when: pre_reboot_flag.stat.exists and is_upgrade_required
+
+    - name: Wait for connection after pre-reboot
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 900
+      when: pre_reboot_flag.stat.exists and is_upgrade_required
+
+    - name: Upgrade Ubuntu {{ ansible_distribution_version }} LTS -> Ubuntu {{ upgrade_to }} LTS
+      # The '-m server' flag runs the upgrade in server mode to avoid interactive prompts and prevent SSH session drops during the upgrade.
+      ansible.builtin.shell: do-release-upgrade -f DistUpgradeViewNonInteractive -m server
+      environment: "{{ noninteractive_env }}"
+      when: is_upgrade_required
+    
+    - name: Check if a post-upgrade reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: post_reboot_flag
+
+    - name: Reboot after release upgrade
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+      when: is_upgrade_required and post_reboot_flag.stat.exists
+    
+    - name: Re-gather facts
+      ansible.builtin.setup:
+      when: is_upgrade_required

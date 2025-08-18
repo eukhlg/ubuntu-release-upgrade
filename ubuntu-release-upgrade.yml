@@ -1,0 +1,60 @@
+# ubuntu-release-upgrade.yml
+- name: Bring all Ubuntu LTS hosts up to latest LTS release
+  hosts: ubuntu
+  become: true
+  gather_facts: true
+  serial: 1
+
+  vars:
+    # Ordered path of LTS releases we care about
+    # Can add older and newer releases here if needed
+    lts_releases: [ '16.04', '18.04', '20.04', '22.04', '24.04']
+    # Target release is the last in the list
+    target_release: "{{ lts_releases | last }}"
+
+    apt_cache_valid_time: 3600
+    # Set Python 3 interpreter explicitly as version changes on each hop
+    ansible_python_interpreter: /usr/bin/python3
+    noninteractive_env:
+      DEBIAN_FRONTEND: noninteractive
+      NEEDRESTART_MODE: a        # auto-restart services when needed
+
+  pre_tasks:
+    - name: Make sure APT cache is fresh
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: Upgrade current release packages (safe)
+      ansible.builtin.apt:
+        upgrade: safe
+        autoremove: yes
+        autoclean: yes
+
+    - name: Ensure release upgrader is present
+      ansible.builtin.apt:
+        name: update-manager-core
+        state: present
+
+    - name: Set Prompt=lts for release upgrades
+      ansible.builtin.lineinfile:
+        path: /etc/update-manager/release-upgrades
+        regexp: '^Prompt='
+        line: 'Prompt=lts'
+
+  tasks:
+    # For each host, perform sequential upgrade hops to each LTS release newer than its current version.
+    # Hosts already at the target LTS release will skip all upgrade hops and perform no upgrades.
+    - name: Perform cross-release upgrade
+      ansible.builtin.include_tasks: upgrade-hop.yml
+      loop: "{{ lts_releases | select('version', ansible_distribution_version, '>') | list }}"
+      loop_control:
+        label: "Upgrade to Ubuntu {{ item }} LTS"
+      vars:
+        upgrade_to: "{{ item }}"
+
+    # Show message if further upgrade not required
+    - name: Show message if further upgrade not required
+      ansible.builtin.debug:
+        msg: "You are now on Ubuntu {{ ansible_distribution_version }} LTS"
+      when: ansible_distribution_version == target_release
