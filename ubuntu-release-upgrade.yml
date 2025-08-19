@@ -47,7 +47,7 @@
   tasks:
     # For each host, perform sequential upgrade hops to each LTS release newer than its current version.
     # Hosts already at the target LTS release will skip all upgrade hops and perform no upgrades.
-    - name: Perform cross-release upgrade
+    - name: Perform cross-release upgrade(s)
       ansible.builtin.include_tasks: upgrade-hop.yml
       loop: "{{ lts_releases | select('version', ansible_distribution_version, '>') | list }}"
       loop_control:
