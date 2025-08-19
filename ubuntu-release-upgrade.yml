@@ -22,16 +22,6 @@
       NEEDRESTART_MODE: a        # auto-restart services when needed
 
   pre_tasks:
-    - name: Check if system reboot is required
-      ansible.builtin.stat:
-        path: /var/run/reboot-required
-      register: reboot_flag
-
-    - name: Reboot before APT cache upgrade
-      ansible.builtin.reboot:
-        reboot_timeout: 1800
-      when: reboot_flag.stat.exists
-      
     - name: Make sure APT cache is fresh
       ansible.builtin.apt:
         update_cache: yes
