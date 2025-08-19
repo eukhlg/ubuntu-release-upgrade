@@ -38,8 +38,14 @@
     - name: Reboot after release upgrade
       ansible.builtin.reboot:
         reboot_timeout: 1800
-      when: is_upgrade_required and post_reboot_flag.stat.exists
-    
+      when: post_reboot_flag.stat.exists and is_upgrade_required
+      
+    - name: Wait for connection after post-reboot
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 900
+      when: post_reboot_flag.stat.exists and is_upgrade_required
+      
     - name: Re-gather facts
       ansible.builtin.setup:
       when: is_upgrade_required
