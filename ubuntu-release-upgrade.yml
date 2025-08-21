@@ -23,7 +23,7 @@
 
   pre_tasks:
     - name: Update CA certificates
-      # Sometimes apt cache upgrade gets failed for https sources which caused by outdated CA crtificates
+      # Sometimes apt cache upgrade gets failed for https sources which caused by outdated CA certificates
       ansible.builtin.shell: update-ca-certificates
       
     - name: Make sure APT cache is fresh
